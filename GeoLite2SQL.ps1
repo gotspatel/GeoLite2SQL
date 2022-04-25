@@ -26,13 +26,18 @@
 .PARAMETER SelectType
 	Specifies the type of MaxMind data to download and import.
 	
-	Options are "country" and "city".
+	Options are "country", "city", "asn".
 	
 .EXAMPLE
 	Run script as follows:
 
 	C:\path\to\Geolite2SQL.ps1 country
 	C:\path\to\Geolite2SQL.ps1 city
+	C:\path\to\Geolite2SQL.ps1 asn
+	
+	C:\Scripts\GeoIP2\Geolite2SQL.ps1 country
+	C:\Scripts\GeoIP2\Geolite2SQL.ps1 city
+	C:\Scripts\GeoIP2\Geolite2SQL.ps1 asn
 
 .EXAMPLE
 	Example queries to return country code and country name from country database:
@@ -116,9 +121,9 @@ Function Email ($Email) {
 }
 
 Function EmailResults {
-	Debug "GeoIP update finished"
+	Debug "GeoIP $Type update finished"
 	Email " "
-	Email "GeoIP update finish: $(Get-Date -f G)"
+	Email "GeoIP $type update finish: $(Get-Date -f G)"
 	If ($UseHTML) {
 		If ($UseHTML) {Write-Output "</table></body></html>" | Out-File $EmailBody -Encoding ASCII -Append}
 	}
@@ -128,6 +133,11 @@ Function EmailResults {
 		}
 	}
 	Try {
+		## GEO DATA NAME VARIABLE
+		$EmailFrom = "GeoIP $Type Update <$Emailid>"
+		$Subject = "GeoIP $Type Update"  
+		## GEO DATA NAME VARIABLE
+	
 		$Body = (Get-Content -Path $EmailBody | Out-String )
 		If (($AttachDebugLog) -and (Test-Path $DebugLog) -and (((Get-Item $DebugLog).length/1MB) -lt $MaxAttachmentSize)){$Attachment = New-Object System.Net.Mail.Attachment $DebugLog}
 		$Message = New-Object System.Net.Mail.Mailmessage $EmailFrom, $EmailTo, $Subject, $Body
@@ -144,7 +154,13 @@ Function EmailResults {
 }
 
 Function EmailInitError {
-	$Body = "Failed to provide proper parameter. Use 'city' or 'country'. Script quit on parameter error."
+
+    ## GEO DATA NAME VARIABLE
+	$EmailFrom = "GeoIP $Type Update <$Emailid>" 
+	$Subject = "GeoIP $Type Update" 
+	## GEO DATA NAME VARIABLE
+
+	$Body = "Failed to provide proper parameter. Use 'city' or 'country' or 'asn'. Script quit on parameter error."
 	$Message = New-Object System.Net.Mail.Mailmessage $EmailFrom, $EmailTo, $Subject, $Body
 	$Message.IsBodyHTML = $False
 	$SMTP = New-Object System.Net.Mail.SMTPClient $SMTPServer,$SMTPPort
@@ -246,16 +262,18 @@ Function CheckForUpdates {
 
 
 <###   BEGIN SCRIPT   ###>
-If ($SelectType -notmatch '^[cC][iI][tT][yY]$|^[cC][oO][uU][nN][tT][rR][yY]$') {
-	Write-Host "Failed to provide proper parameter. Use 'city' or 'country'."
+If ($SelectType -notmatch '^[cC][iI][tT][yY]$|^[cC][oO][uU][nN][tT][rR][yY]$|^[aA][sS][nN]$') {
+	Write-Host "Failed to provide proper parameter. Use 'city' or 'country' or 'asn'."
 	Write-Host "Quitting Script"
 	EmailInitError
 	Exit
 } Else {
 	If ($SelectType -match 'country') {
 		$Type = "Country"
-	} Else {
+	} ElseIf ($SelectType -match 'city') {
 		$Type = "City"
+	} ElseIf ($SelectType -match 'asn'){
+		$Type = "ASN"
 	}
 }
 
@@ -381,17 +399,21 @@ If (-not (Test-Path $DownloadFolder)){
 }
 
 <#  Rename Locations CSV  #>
-Try {
-	Rename-Item $LangLocations $LocationsRenamed -ErrorAction Stop
-	Debug "Locations CSV successfully renamed"
-}
-Catch {
-	Debug "[ERROR] : Unable to rename locations CSV : $($Error[0])"
-	Debug "[ERROR] : Quitting Script"
-	Email "[ERROR] Failed to rename locations CSV. See error log."
-	EmailResults
-	Exit
-}
+If ($Type -ne 'asn') {
+	    Try {
+	        Rename-Item $LangLocations $LocationsRenamed -ErrorAction Stop
+	        Debug "Locations CSV successfully renamed"
+        }
+        Catch {
+	        Debug "[ERROR] : Unable to rename locations CSV : $($Error[0])"
+	        Debug "[ERROR] : Quitting Script"
+	        Email "[ERROR] Failed to rename locations CSV. See error log."
+	        EmailResults
+	        Exit
+        }
+
+	} Else {
+	}
 
 <#  Count database records  #>
 Debug "----------------------------"
@@ -408,7 +430,7 @@ If ($CountTables -gt 0) {
 	If ($CountDB -eq 0) {
 		Debug "0 database records prior to starting update"
 	} Else { 
-		Debug "$(($CountDB).ToString('#,###')) database records prior to starting update"
+	Debug "$(($CountDB).ToString('#,###')) database records prior to starting update"
 	}
 } Else {
 	Debug "No database records to count"
@@ -476,9 +498,9 @@ Try {
 				KEY geoname_id (geoname_id),
 				KEY network_start (network_start),
 				PRIMARY KEY network_end (network_end)
-			) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 		"
-	} Else {
+	} ElseIf ($Type -match "city"){
 		$GCQuery = "
 			DROP TABLE IF EXISTS geocity;
 			CREATE TABLE geocity (
@@ -496,8 +518,21 @@ Try {
 				KEY geoname_id (geoname_id),
 				KEY network_start (network_start),
 				PRIMARY KEY network_end (network_end)
-			) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 		"
+	} ElseIf ($Type -match "asn") {
+		$GCQuery = "
+		DROP TABLE IF EXISTS geoasn;
+		CREATE TABLE geoASN (
+			network_start VARBINARY(16) NOT NULL,
+			network_end VARBINARY(16) NOT NULL,
+			autonomous_system_number BIGINT,
+			autonomous_system_organization TINYTEXT,
+			KEY autonomous_system_number (autonomous_system_number),
+			KEY network_start (network_start),
+			PRIMARY KEY network_end (network_end)
+		) ENGINE=INNODB DEFAULT CHARSET=utf8mb4;
+	"
 	}
 	MySQLQuery $GCQuery
 
@@ -513,9 +548,9 @@ Try {
 				country_name TINYTEXT,
 				is_in_european_union TINYINT,
 				KEY geoname_id (geoname_id)
-			) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 		"
-	} Else {
+	} ElseIf ($Type -match "city"){
 		$GLQuery = "
 			DROP TABLE IF EXISTS citylocations;
 			CREATE TABLE citylocations (
@@ -538,20 +573,22 @@ Try {
 		"
 	}
 	MySQLQuery $GLQuery
-	Debug "Database tables successfully dropped and created"
-	Email "[OK] Database tables dropped & recreated"
+	Debug "Database tables $type successfully dropped and created"
+	Email "[OK] Database tables $type dropped & recreated"
 }
 Catch {
-	Debug "[ERROR] : Unable to drop/create database tables : $($Error[0])"
+	Debug "[ERROR] : Unable to drop/create $type database tables : $($Error[0])"
 	Debug "[ERROR] : Quitting Script"
-	Email "[ERROR] Failed to drop/create database tables. See error log."
+	Email "[ERROR] Failed to drop/create $type database tables. See error log."
 	EmailResults
 	Exit
 }
 
 <#  Import to database  #>
 Debug "----------------------------"
-Debug "Import converted CSVs to database"
+Debug "Import $Type converted CSVs to database"
+[string]$StrFileLocIPv4 = $BlocksConvertedIPv4 -Replace "\\","\\"
+[string]$StrFileLocIPv6 = $BlocksConvertedIPv6 -Replace "\\","\\"
 $StrFileLocHash = @{
 	"IPv4" = "$($BlocksConvertedIPv4 -Replace '\\','\\')"
 	"IPv6" = "$($BlocksConvertedIPv6 -Replace '\\','\\')"
@@ -561,7 +598,7 @@ ForEach ($IPver in $StrFileLocHash.Keys) {
 	Try {
 		If ($Type -match "country") {
 			$ImportIPv4Query = "
-				LOAD DATA INFILE '" + $($strFileLocHash[$IPver]) + "'
+				LOAD DATA LOCAL INFILE '" + $($strFileLocHash[$IPver]) + "'
 				INTO TABLE geocountry
 				FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '`"' LINES TERMINATED BY '\n' IGNORE 1 ROWS
 				(@network_start_hex, @network_last_hex, @geoname_id, @registered_country_geoname_id, @represented_country_geoname_id, @is_anonymous_proxy, @is_satellite_provider)
@@ -574,9 +611,9 @@ ForEach ($IPver in $StrFileLocHash.Keys) {
 					is_anonymous_proxy = NULLIF(@is_anonymous_proxy, ''),
 					is_satellite_provider = NULLIF(@is_satellite_provider, '');
 			"
-		} Else {
+		} ElseIf ($Type -match "city"){
 			$ImportIPv4Query = "
-				LOAD DATA INFILE '" + $($strFileLocHash[$IPver]) + "'
+				LOAD DATA LOCAL INFILE '" + $($strFileLocHash[$IPver]) + "'
 				INTO TABLE geocity
 				FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '`"' LINES TERMINATED BY '\n' IGNORE 1 ROWS
 				(@network_start_hex, @network_last_hex, @geoname_id, @registered_country_geoname_id, @represented_country_geoname_id, @is_anonymous_proxy, @is_satellite_provider, @postal_code, @latitude, @longitude, @accuracy_radius)
@@ -593,7 +630,20 @@ ForEach ($IPver in $StrFileLocHash.Keys) {
 					longitude = NULLIF(@longitude, ''),
 					accuracy_radius = NULLIF(@accuracy_radius, '');
 			"
+		} ElseIf ($Type -match "asn") {
+		$ImportIPv4Query = "
+				LOAD DATA LOCAL INFILE '" + $($strFileLocHash[$IPver]) + "'
+				INTO TABLE geoasn
+				FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '`"' LINES TERMINATED BY '\n' IGNORE 1 ROWS
+				(@network_start_hex, @network_last_hex, @autonomous_system_number, @autonomous_system_organization)
+				SET 
+					network_start = UNHEX(@network_start_hex),
+					network_end = UNHEX(@network_last_hex),
+					autonomous_system_number = NULLIF(@autonomous_system_number, ''),
+					autonomous_system_organization = NULLIF(@autonomous_system_organization, '');
+			"		
 		}
+		
 		MySQLQuery $ImportIPv4Query
 		DEBUG "[OK] $Type $IPver data imported in $(ElapsedTime $Timer)"
 	}
@@ -605,58 +655,62 @@ ForEach ($IPver in $StrFileLocHash.Keys) {
 		Exit
 	}
 }
-
-<#  Import name data  #>
-$Timer = Get-Date
-Try {
-	If ($Type -match "country") {
-		$ImportLocQuery = "
-			LOAD DATA INFILE '" + $($LocationsRenamed -Replace '\\','\\') + "'
-			INTO TABLE countrylocations
-			FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '`"' LINES TERMINATED BY '\n' IGNORE 1 ROWS
-			(@geoname_id, @locale_code, @continent_code, @continent_name, @country_iso_code, @country_name, @is_in_european_union)
-			SET
-				geoname_id = NULLIF(@geoname_id, ''), 
-				locale_code = NULLIF(@locale_code, ''), 
-				continent_code = NULLIF(@continent_code, ''), 
-				continent_name = NULLIF(@continent_name, ''), 
-				country_code = NULLIF(@country_iso_code, ''), 
-				country_name = NULLIF(@country_name, ''), 
-				is_in_european_union = NULLIF(@is_in_european_union, '');
-		"
+<#  Import country name data  #>
+If ($Type -ne 'asn') {
+		<#  Import country name data  #>
+		$Timer = Get-Date
+		Try {
+			$strFileLocName = $LocationsRenamed -Replace "\\","\\"
+			If ($Type -match "country") {
+				$ImportLocQuery = "
+					LOAD DATA LOCAL INFILE '" + $($LocationsRenamed -Replace '\\','\\') + "'
+					INTO TABLE countrylocations
+					FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '`"' LINES TERMINATED BY '\n' IGNORE 1 ROWS
+					(@geoname_id, @locale_code, @continent_code, @continent_name, @country_iso_code, @country_name, @is_in_european_union)
+					SET
+						geoname_id = NULLIF(@geoname_id, ''), 
+						locale_code = NULLIF(@locale_code, ''), 
+						continent_code = NULLIF(@continent_code, ''), 
+						continent_name = NULLIF(@continent_name, ''), 
+						country_code = NULLIF(@country_iso_code, ''), 
+						country_name = NULLIF(@country_name, ''), 
+						is_in_european_union = NULLIF(@is_in_european_union, '');
+				"
+			} ElseIf ($Type -match "city") {
+				$ImportLocQuery = "
+					LOAD DATA LOCAL INFILE '" + $($LocationsRenamed -Replace '\\','\\') + "'
+					INTO TABLE citylocations
+					FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '`"' LINES TERMINATED BY '\n' IGNORE 1 ROWS
+					(@geoname_id, @locale_code, @continent_code, @continent_name, @country_iso_code, @country_name, @subdivision_1_iso_code, @subdivision_1_name, @subdivision_2_iso_code, @subdivision_2_name, @city_name, @metro_code, @time_zone, @is_in_european_union)
+					SET 
+						geoname_id = NULLIF(@geoname_id, ''), 
+						locale_code = NULLIF(@locale_code, ''), 
+						continent_code = NULLIF(@continent_code, ''), 
+						continent_name = NULLIF(@continent_name, ''), 
+						country_code = NULLIF(@country_iso_code, ''), 
+						country_name = NULLIF(@country_name, ''), 
+						subdivision_1_iso_code = NULLIF(@subdivision_1_iso_code, ''), 
+						subdivision_1_name = NULLIF(@subdivision_1_name, ''), 
+						subdivision_2_iso_code = NULLIF(@subdivision_2_iso_code, ''), 
+						subdivision_2_name = NULLIF(@subdivision_2_name, ''), 
+						city_name = NULLIF(@city_name, ''), 
+						metro_code = NULLIF(@metro_code, ''), 
+						time_zone = NULLIF(@time_zone, ''), 
+						is_in_european_union = NULLIF(@is_in_european_union, '');
+				"
+			}
+			MySQLQuery $ImportLocQuery
+			DEBUG "[OK] $Type name data imported in $(ElapsedTime $Timer)"
+		}
+		Catch {
+			Debug "[ERROR] : Unable to convert $Type name CSV : $($Error[0])"
+			Debug "[ERROR] : Quitting Script"
+			Email "[ERROR] Failed to convert $Type name CSV. See error log."
+			EmailResults
+			Exit
+		}
 	} Else {
-		$ImportLocQuery = "
-			LOAD DATA INFILE '" + $($LocationsRenamed -Replace '\\','\\') + "'
-			INTO TABLE citylocations
-			FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '`"' LINES TERMINATED BY '\n' IGNORE 1 ROWS
-			(@geoname_id, @locale_code, @continent_code, @continent_name, @country_iso_code, @country_name, @subdivision_1_iso_code, @subdivision_1_name, @subdivision_2_iso_code, @subdivision_2_name, @city_name, @metro_code, @time_zone, @is_in_european_union)
-			SET 
-				geoname_id = NULLIF(@geoname_id, ''), 
-				locale_code = NULLIF(@locale_code, ''), 
-				continent_code = NULLIF(@continent_code, ''), 
-				continent_name = NULLIF(@continent_name, ''), 
-				country_code = NULLIF(@country_iso_code, ''), 
-				country_name = NULLIF(@country_name, ''), 
-				subdivision_1_iso_code = NULLIF(@subdivision_1_iso_code, ''), 
-				subdivision_1_name = NULLIF(@subdivision_1_name, ''), 
-				subdivision_2_iso_code = NULLIF(@subdivision_2_iso_code, ''), 
-				subdivision_2_name = NULLIF(@subdivision_2_name, ''), 
-				city_name = NULLIF(@city_name, ''), 
-				metro_code = NULLIF(@metro_code, ''), 
-				time_zone = NULLIF(@time_zone, ''), 
-				is_in_european_union = NULLIF(@is_in_european_union, '');
-		"
-	}
-	MySQLQuery $ImportLocQuery
-	DEBUG "[OK] $Type name data imported in $(ElapsedTime $Timer)"
-}
-Catch {
-	Debug "[ERROR] : Unable to convert $Type name CSV : $($Error[0])"
-	Debug "[ERROR] : Quitting Script"
-	Email "[ERROR] Failed to convert $Type name CSV. See error log."
-	EmailResults
-	Exit
-}
+			}
 
 $CountImportSQL = "SELECT COUNT(*) AS count FROM geo" + $Type + ";"
 MySQLQuery $CountImportSQL | ForEach {
