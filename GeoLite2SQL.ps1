@@ -40,9 +40,7 @@
 	C:\Scripts\GeoIP2\Geolite2SQL.ps1 asn
 
 .EXAMPLE
-	Example queries to return country code and country name from country database:
-	
-		SELECT country_code, country_name
+	SELECT country_iso_code, country_name
 		FROM (
 			SELECT * 
 			FROM geocountry 
@@ -52,7 +50,7 @@
 		INNER JOIN countrylocations AS b on a.geoname_id = b.geoname_id
 		WHERE network_start <= INET6_ATON('212.186.81.105');
 		
-		SELECT country_code, country_name
+		SELECT country_iso_code, country_name
 		FROM (
 			SELECT * 
 			FROM geocountry 
@@ -61,7 +59,6 @@
 		) AS a 
 		INNER JOIN countrylocations AS b on a.geoname_id = b.geoname_id
 		WHERE network_start <= INET6_ATON('2001:67c:28a4::');
-
 	Example queries to return all columns from city database:
 	
 		SELECT *
