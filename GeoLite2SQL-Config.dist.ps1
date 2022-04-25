@@ -33,40 +33,40 @@
 	
 .EXAMPLE
 	Run script as follows:
-
 	C:\path\to\Geolite2SQL.ps1 country
 	C:\path\to\Geolite2SQL.ps1 city
-
-.EXAMPLE
-	Example queries to return country code and country name from country database:
+	C:\path\to\Geolite2SQL.ps1 asn
 	
-		SELECT country_code, country_name
+	C:\Scripts\GeoIP2\Geolite2SQL.ps1 country
+	C:\Scripts\GeoIP2\Geolite2SQL.ps1 city
+	C:\Scripts\GeoIP2\Geolite2SQL.ps1 asn
+.EXAMPLE
+	SELECT country_iso_code, country_name
 		FROM (
 			SELECT * 
 			FROM geocountry 
-			WHERE INET6_ATON('212.186.81.105') <= network_last
+			WHERE INET6_ATON('212.186.81.105') <= network_end
 			LIMIT 1
 		) AS a 
 		INNER JOIN countrylocations AS b on a.geoname_id = b.geoname_id
 		WHERE network_start <= INET6_ATON('212.186.81.105');
 		
-		SELECT country_code, country_name
+		SELECT country_iso_code, country_name
 		FROM (
 			SELECT * 
 			FROM geocountry 
-			WHERE INET6_ATON('2001:67c:28a4::') <= network_last
+			WHERE INET6_ATON('2001:67c:28a4::') <= network_end
 			LIMIT 1
 		) AS a 
 		INNER JOIN countrylocations AS b on a.geoname_id = b.geoname_id
 		WHERE network_start <= INET6_ATON('2001:67c:28a4::');
-
 	Example queries to return all columns from city database:
 	
 		SELECT *
 		FROM (
 			SELECT * 
 			FROM geocity 
-			WHERE INET6_ATON('212.186.81.105') <= network_last
+			WHERE INET6_ATON('212.186.81.105') <= network_end
 			LIMIT 1
 		) AS a 
 		INNER JOIN citylocations AS b on a.geoname_id = b.geoname_id
@@ -76,12 +76,11 @@
 		FROM (
 			SELECT * 
 			FROM geocity 
-			WHERE INET6_ATON('2001:67c:28a4::') <= network_last
+			WHERE INET6_ATON('2001:67c:28a4::') <= network_end
 			LIMIT 1
 		) AS a 
 		INNER JOIN citylocations AS b on a.geoname_id = b.geoname_id
 		WHERE network_start <= INET6_ATON('2001:67c:28a4::');
-
 .LINK
 	GitHub Repository: https://github.com/palinkas-jo-reggelt/GeoLite2SQL
 
@@ -99,9 +98,10 @@ $MySQLCommandTimeOut  = 9000000        # Leave high if read errors
 $MySQLImport          = "C:\xampp\mysql\bin\mysqlimport.exe"
 
 ###   Email Variables   ###
-$EmailFrom            = "notify@mydomain.tld"
+#$EmailFrom            = "notify@mydomain.tld"  	## moved to Function PS for updating the name of GEO DATA
+$Emailid              = "notify@mydomain.tld"		## Added the Variable for EMAIL ID
 $EmailTo              = "admin@mydomain.tld"
-$Subject              = "GeoIP Update"
+# $Subject              = "GeoIP Update"							## moved to Function PS for updating the name of GEO DATA
 $SMTPServer           = "mail.mydomain.tld"
 $SMTPAuthUser         = "notify@mydomain.tld"
 $SMTPAuthPass         = "supersecretpassword"
