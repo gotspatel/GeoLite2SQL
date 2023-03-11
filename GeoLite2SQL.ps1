@@ -35,9 +35,9 @@
 	C:\path\to\Geolite2SQL.ps1 city
 	C:\path\to\Geolite2SQL.ps1 asn
 	
-	C:\Scripts\GeoIP2\Geolite2SQL.ps1 country
-	C:\Scripts\GeoIP2\Geolite2SQL.ps1 city
-	C:\Scripts\GeoIP2\Geolite2SQL.ps1 asn
+	C:\Scripts\GeoIP3\Geolite2SQL.ps1 country
+	C:\Scripts\GeoIP3\Geolite2SQL.ps1 city
+	C:\Scripts\GeoIP3\Geolite2SQL.ps1 asn
 
 .EXAMPLE
 	SELECT country_iso_code, country_name
@@ -523,7 +523,7 @@ Try {
 				KEY geoname_id (geoname_id),
 				KEY network_start (network_start),
 				KEY network_end (network_end)
-			) ENGINE=InnoDB;
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 		"
 	} ElseIf ($Type -match "city"){
 		$GCQuery = "
@@ -539,11 +539,11 @@ Try {
 				postal_code TEXT,
 				latitude float,
 				longitude float,
-				accuracy_radius int,				
+				accuracy_radius INT,
 				KEY geoname_id (geoname_id),
 				KEY network_start (network_start),
-				PRIMARY KEY network_end (network_end)
-			) ENGINE=InnoDB;
+				KEY network_end (network_end)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 		"
 	} ElseIf ($Type -match "asn") {
 		$GCQuery = "
@@ -551,12 +551,12 @@ Try {
 		CREATE TABLE geoASN (
 			network_start VARBINARY(16) NOT NULL,
 			network_end VARBINARY(16) NOT NULL,
-			autonomous_system_number BIGINT,
-			autonomous_system_organization TINYTEXT,
+			autonomous_system_number INT,
+			autonomous_system_organization TEXT,
 			KEY autonomous_system_number (autonomous_system_number),
 			KEY network_start (network_start),
-			PRIMARY KEY network_end (network_end)
-		) ENGINE=InnoDB;
+			KEY network_end (network_end)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 	"
 	}
 	MySQLQuery $GCQuery
@@ -573,7 +573,7 @@ Try {
 				country_name TEXT,
 				is_in_european_union bool,
 				PRIMARY KEY geoname_id (geoname_id)
-			) ENGINE=InnoDB;
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 		"
 	} ElseIf ($Type -match "city"){
 		$GLQuery = "
@@ -594,7 +594,7 @@ Try {
 				time_zone TEXT,
 				is_in_european_union bool,
 				PRIMARY KEY geoname_id (geoname_id)
-			) ENGINE=InnoDB;
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 		"
 	}
 	MySQLQuery $GLQuery
@@ -623,7 +623,7 @@ ForEach ($IPver in $StrFileLocHash.Keys) {
 	Try {
 		If ($Type -match "country") {
 			$ImportIPv4Query = "
-				LOAD DATA INFILE '$($LocationsRenamed -Replace '\\','\\')'
+				LOAD DATA INFILE '$($strFileLocHash[$IPver])'
 				INTO TABLE geocountry
 				FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '`"' LINES TERMINATED BY '\n' IGNORE 1 ROWS
 				(@network_start_hex, @network_last_hex, @geoname_id, @registered_country_geoname_id, @represented_country_geoname_id, @is_anonymous_proxy, @is_satellite_provider)
@@ -638,7 +638,7 @@ ForEach ($IPver in $StrFileLocHash.Keys) {
 			"
 		} ElseIf ($Type -match "city"){
 			$ImportIPv4Query = "
-				LOAD DATA INFILE '$($LocationsRenamed -Replace '\\','\\')'
+				LOAD DATA INFILE '$($strFileLocHash[$IPver])'
 				INTO TABLE geocity
 				FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '`"' LINES TERMINATED BY '\n' IGNORE 1 ROWS
 				(@network_start_hex, @network_last_hex, @geoname_id, @registered_country_geoname_id, @represented_country_geoname_id, @is_anonymous_proxy, @is_satellite_provider, @postal_code, @latitude, @longitude, @accuracy_radius)
@@ -657,7 +657,7 @@ ForEach ($IPver in $StrFileLocHash.Keys) {
 			"
 		} ElseIf ($Type -match "asn") {
 		$ImportIPv4Query = "
-				LOAD DATA INFILE '$($LocationsRenamed -Replace '\\','\\')'
+				LOAD DATA INFILE '$($strFileLocHash[$IPver])'
 				INTO TABLE geoasn
 				FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '`"' LINES TERMINATED BY '\n' IGNORE 1 ROWS
 				(@network_start_hex, @network_last_hex, @autonomous_system_number, @autonomous_system_organization)
@@ -685,44 +685,41 @@ If ($Type -ne 'asn') {
 		<#  Import country name data  #>
 		$Timer = Get-Date
 		Try {
-			$strFileLocName = $LocationsRenamed -Replace "\\","\\"
-			If ($Type -match "country") {
-				$ImportLocQuery = "
-					LOAD DATA INFILE '$($LocationsRenamed -Replace '\\','\\')'
-					INTO TABLE countrylocations
-					FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '`"' LINES TERMINATED BY '\n' IGNORE 1 ROWS
-					(@geoname_id, @locale_code, @continent_code, @continent_name, @country_iso_code, @country_name, @is_in_european_union)
-					SET
-						(geoname_id, locale_code, continent_code, continent_name, 
-						@country_iso_code, @country_name, @is_in_european_union)
-					SET 
-						country_iso_code = NULLIF(@country_iso_code, ''), 
-						country_name = NULLIF(@country_name, ''), 
-						is_in_european_union = NULLIF(@is_in_european_union, '');
-				"
-			} ElseIf ($Type -match "city") {
-				$ImportLocQuery = "
-					LOAD DATA INFILE '$($LocationsRenamed -Replace '\\','\\')'
-					INTO TABLE citylocations
-					FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '`"' LINES TERMINATED BY '\n' IGNORE 1 ROWS
-					(geoname_id, locale_code, continent_code, continent_name, 
-			@country_iso_code, @country_name, @subdivision_1_iso_code, @subdivision_1_name, @subdivision_2_iso_code, @subdivision_2_name, @city_name, @metro_code, @time_zone, @is_in_european_union)
-					SET 
-						country_iso_code = NULLIF(@country_iso_code, ''), 
-						country_name = NULLIF(@country_name, ''), 
-						subdivision_1_iso_code = NULLIF(@subdivision_1_iso_code, ''), 
-						subdivision_1_name = NULLIF(@subdivision_1_name, ''), 
-						subdivision_2_iso_code = NULLIF(@subdivision_2_iso_code, ''), 
-						subdivision_2_name = NULLIF(@subdivision_2_name, ''), 
-						city_name = NULLIF(@city_name, ''), 
-						metro_code = NULLIF(@metro_code, ''), 
-						time_zone = NULLIF(@time_zone, ''), 
-						is_in_european_union = NULLIF(@is_in_european_union, '');
-				"
-			}
-			MySQLQuery $ImportLocQuery
-			DEBUG "[OK] $Type name data imported in $(ElapsedTime $Timer)"
-		}
+	        If ($Type -match "country") {
+		        $ImportLocQuery = "
+			        LOAD DATA INFILE '$($LocationsRenamed -Replace '\\','\\')'
+			        INTO TABLE countrylocations
+			        FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '`"' LINES TERMINATED BY '\n' IGNORE 1 ROWS
+			        (geoname_id, locale_code, continent_code, continent_name, 
+			        @country_iso_code, @country_name, @is_in_european_union)
+			        SET 
+				        country_iso_code = NULLIF(@country_iso_code, ''), 
+				        country_name = NULLIF(@country_name, ''), 
+				        is_in_european_union = NULLIF(@is_in_european_union, '');
+		        "
+	        } Else {
+		        $ImportLocQuery = "
+			        LOAD DATA INFILE '$($LocationsRenamed -Replace '\\','\\')'
+			        INTO TABLE citylocations
+			        FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '`"' LINES TERMINATED BY '\n' IGNORE 1 ROWS
+			        (geoname_id, locale_code, continent_code, continent_name, 
+			        @country_iso_code, @country_name, @subdivision_1_iso_code, @subdivision_1_name, @subdivision_2_iso_code, @subdivision_2_name, @city_name, @metro_code, @time_zone, @is_in_european_union)
+			        SET 
+				        country_iso_code = NULLIF(@country_iso_code, ''), 
+				        country_name = NULLIF(@country_name, ''), 
+				        subdivision_1_iso_code = NULLIF(@subdivision_1_iso_code, ''), 
+				        subdivision_1_name = NULLIF(@subdivision_1_name, ''), 
+				        subdivision_2_iso_code = NULLIF(@subdivision_2_iso_code, ''), 
+				        subdivision_2_name = NULLIF(@subdivision_2_name, ''), 
+				        city_name = NULLIF(@city_name, ''), 
+				        metro_code = NULLIF(@metro_code, ''), 
+				        time_zone = NULLIF(@time_zone, ''), 
+				        is_in_european_union = NULLIF(@is_in_european_union, '');
+		        "
+	        }
+	        MySQLQuery $ImportLocQuery
+	        DEBUG "[OK] $Type name data imported in $(ElapsedTime $Timer)"
+        }
 		Catch {
 			Debug "[ERROR] : Unable to convert $Type name CSV : $($Error[0])"
 			Debug "[ERROR] : Quitting Script"
