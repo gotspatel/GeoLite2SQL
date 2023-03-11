@@ -290,9 +290,10 @@ $EmailBody = "$PSScriptRoot\Script-Created-Files\EmailBody.txt"
 $DebugLog = "$PSScriptRoot\Script-Created-Files\DebugLog.log"
 
 <#	Create folder for temporary script files if it doesn't exist  #>
-If (-not(Test-Path "$PSScriptRoot\Script-Created-Files")) {
-	md "$PSScriptRoot\Script-Created-Files"
+If (Test-Path "$PSScriptRoot\Script-Created-Files") {
+	Remove-Item -Force -Path "$PSScriptRoot\Script-Created-Files" -Recurse
 }
+md "$PSScriptRoot\Script-Created-Files"
 
 <#	Delete old debug log before debugging  #>
 If (Test-Path $DebugLog) {Remove-Item -Force -Path $DebugLog}
@@ -334,11 +335,18 @@ Debug "Deleting old files"
 If (Test-Path $DownloadFolder) {
 	Try {
 		Remove-Item -Recurse -Force $DownloadFolder
-		Debug "Folder $DownloadFolder successfully deleted"
+		If (Test-Path $DownloadFolder) {
+			Throw "Test-Path on $DownloadFolder failed - nothing deleted"
+		} Else {
+			Debug "Folder $DownloadFolder successfully deleted"
+		}
 	}
 	Catch {
-		Debug "[INFO] : Unable to delete old MaxMind data : $($Error[0])"
-		Email "[INFO] Failed to delete old MaxMind data. See error log."
+		Debug "[ERROR] : Unable to delete old MaxMind data : $($Error[0])"
+		Debug "[ERROR] : Quitting Script"
+		Email "[ERROR] Failed to delete old MaxMind data. See error log."
+		EmailResults
+		Exit
 	}
 } Else {
 	Debug "No old files to delete"
@@ -348,19 +356,35 @@ If (Test-Path $DownloadFolder) {
 Debug "----------------------------"
 Debug "Downloading MaxMind data"
 $Timer = Get-Date
-Try {
-	$URL = "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-" + $Type + "-CSV&license_key=" + $LicenseKey + "&suffix=zip"
-	Start-BitsTransfer -Source $URL -Destination $DownloadedZip -ErrorAction Stop
-	Debug "MaxMind data successfully downloaded in $(ElapsedTime $Timer)"
-	Email "[OK] MaxMind data downloaded"
-}
-Catch {
-	Debug "[ERROR] : Unable to download MaxMind data : $($Error[0])"
-	Debug "[ERROR] : Quitting Script"
-	Email "[ERROR] Failed to download MaxMind data. See error log."
-	EmailResults
-	Exit
-}
+$URL = "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-" + $Type + "-CSV&license_key=" + $LicenseKey + "&suffix=zip"
+$Try = 1
+Do {
+	Try {
+		Invoke-WebRequest -Uri $URL -OutFile $DownloadedZip
+		If (Test-Path $DownloadedZip) {
+			Debug "MaxMind data successfully downloaded in $(ElapsedTime $Timer)"
+			Email "[OK] MaxMind data downloaded"
+			Break
+		} Else {
+			Throw "MaxMind zip file could not be found after apparently successful download"
+		}
+	}
+	Catch {
+		Debug "[ERROR] : Unable to download MaxMind data on try # $Try"
+		Debug "[ERROR] : Error Message : $($Error[0])"
+		If ($Try -le 9) {
+			Debug "Trying again in 10 seconds"
+			Start-Sleep -Seconds 10
+		} Else {
+			Debug "Tried 10 times to download MaxMind zip file - giving up"
+			Debug "[ERROR] : Quitting Script"
+			Email "[ERROR] Failed to download MaxMind data. See error log."
+			EmailResults
+			Exit
+		}
+	}
+	$Try++
+} Until ($Try -gt 10)
 
 <#	Unzip fresh GeoLite2 data  #>
 $Timer = Get-Date
@@ -490,8 +514,8 @@ Try {
 				geoname_id INT NOT NULL,
 				registered_country_geoname_id INT,
 				represented_country_geoname_id INT,
-				is_anonymous_proxy TINYINT,
-				is_satellite_provider TINYINT,
+				is_anonymous_proxy BOOL,
+				is_satellite_provider BOOL,
 				KEY geoname_id (geoname_id),
 				KEY network_start (network_start),
 				PRIMARY KEY network_end (network_end)
@@ -506,12 +530,12 @@ Try {
 				geoname_id INT NOT NULL,
 				registered_country_geoname_id INT,
 				represented_country_geoname_id INT,
-				is_anonymous_proxy TINYINT,
-				is_satellite_provider TINYINT,
-				postal_code TINYINT,
-				latitude DECIMAL(7,4),
-				longitude DECIMAL(7,4),
-				accuracy_radius TINYINT,
+				is_anonymous_proxy BOOL,
+				is_satellite_provider BOOL,
+				postal_code TEXT,
+				latitude FLOAT,
+				longitude FLOAT,
+				accuracy_radius INT,				
 				KEY geoname_id (geoname_id),
 				KEY network_start (network_start),
 				PRIMARY KEY network_end (network_end)
@@ -538,12 +562,12 @@ Try {
 			DROP TABLE IF EXISTS countrylocations;
 			CREATE TABLE countrylocations (
 				geoname_id INT NOT NULL,
-				locale_code TINYTEXT,
-				continent_code TINYTEXT,
-				continent_name TINYTEXT,
+				locale_code TINYTEXT NOT NULL,
+				continent_code TINYTEXT NOT NULL,
+				continent_name TINYTEXT NOT NULL,
 				country_code TINYTEXT,
 				country_name TINYTEXT,
-				is_in_european_union TINYINT,
+				is_in_european_union BOOL,
 				KEY geoname_id (geoname_id)
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 		"
@@ -552,9 +576,9 @@ Try {
 			DROP TABLE IF EXISTS citylocations;
 			CREATE TABLE citylocations (
 				geoname_id INT NOT NULL,
-				locale_code TINYTEXT,
-				continent_code TINYTEXT,
-				continent_name TINYTEXT,
+				locale_code TINYTEXT NOT NULL,
+				continent_code TINYTEXT NOT NULL,
+				continent_name TINYTEXT NOT NULL,
 				country_code TINYTEXT,
 				country_name TINYTEXT,
 				subdivision_1_iso_code TINYTEXT,
@@ -564,7 +588,7 @@ Try {
 				city_name TINYTEXT,
 				metro_code TINYINT,
 				time_zone TINYTEXT,
-				is_in_european_union TINYINT,
+				is_in_european_union BOOL,
 				KEY geoname_id (geoname_id)
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 		"
